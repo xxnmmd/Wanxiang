@@ -1,0 +1,116 @@
+name: Muliao Release APK
+
+# 「幕僚」重品牌 release 构建：产出【已签名 release APK】
+#   applicationId = com.muliao.agent    显示名 = 幕僚    不带 .dev 后缀
+# 与上游 release.yml 的差异（有意为之）：
+#   1) Temurin JDK 25（上游写 17，低于工程 JavaVersion.VERSION_25 / JvmTarget.JVM_25）
+#   2) 显式安装 ndk;30.0.15729638 / cmake;3.22.1 / platforms;android-37 / build-tools;37.0.0
+#   3) 只上传 artifact，不创建 GitHub Release、不打 tag、不污染上游 Release 列表
+# 触发：workflow_dispatch 手动 + push（main / feature/muliao-brand）；首次推送分支即自动构建
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - feature/muliao-brand
+
+permissions:
+  contents: read
+
+concurrency:
+  group: muliao-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build & Sign Muliao Release APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK 30.0.15729638 & CMake 3.22.1 & SDK 37
+        run: |
+          SDKMGR="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          [ -x "$SDKMGR" ] || SDKMGR="$ANDROID_HOME/tools/bin/sdkmanager"
+          yes | "$SDKMGR" --licenses >/dev/null 2>&1 || true
+          "$SDKMGR" --install "ndk;30.0.15729638" "cmake;3.22.1" "platforms;android-37" "build-tools;37.0.0" | tail -1
+
+      - name: Prepare PRoot ARM64 runtime
+        run: |
+          bash tools/prepare-proot-runtime.sh
+          ls -la app/src/main/jniLibs/arm64-v8a/
+
+      - name: Toolchain info
+        run: |
+          java -version 2>&1
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls "$ANDROID_HOME/ndk" || true
+          ls "$ANDROID_HOME/platforms" || true
+
+      - name: Restore Release Keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.SIGNING_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then echo "::error::SIGNING_KEYSTORE_BASE64 未配置"; exit 1; fi
+          KS="$RUNNER_TEMP/muliao-release.jks"
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$KS"
+          chmod 600 "$KS"
+          {
+            echo "WANXIANG_RELEASE_STORE_FILE=$KS"
+            echo "WANXIANG_RELEASE_STORE_PASSWORD=$STORE_PASSWORD"
+            echo "WANXIANG_RELEASE_KEY_ALIAS=$KEY_ALIAS"
+            echo "WANXIANG_RELEASE_KEY_PASSWORD=$KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+          keytool -list -keystore "$KS" -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
+          echo "Keystore verified. alias=$KEY_ALIAS"
+
+      - name: Build Release APK
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleRelease --console=plain --no-daemon --stacktrace
+
+      - name: Identify and Rename Output APK
+        run: |
+          mkdir -p output
+          APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" | head -n 1)
+          if [ -z "$APK_PATH" ]; then echo "::error::No release APK generated"; exit 1; fi
+          VERSION=$(grep 'val appVersionName' app/build.gradle.kts | sed -E 's/.*"([^"]+)".*/\1/')
+          NAME="muliao-v${VERSION}-arm64-release.apk"
+          cp "$APK_PATH" "output/$NAME"
+          ( cd output && sha256sum "$NAME" > "$NAME.sha256" )
+          echo "APK_FILE=output/$NAME" >> "$GITHUB_ENV"
+          ls -l output/
+
+      - name: Verify APK Metadata
+        run: |
+          AAPT=$(ls "$ANDROID_HOME"/build-tools/*/aapt2 | head -n 1)
+          APK="${APK_FILE}"
+          "$AAPT" dump badging "$APK" > apk_badging.txt 2>&1 || true
+          grep -E "^package:|^application-label|^launchable-activity" apk_badging.txt || true
+          grep -q "package: name='com.muliao.agent'" apk_badging.txt || { echo "::error::applicationId 不是 com.muliao.agent"; exit 1; }
+          grep -q "application-label:'幕僚'" apk_badging.txt || echo "::warning::application-label 未命中「幕僚」"
+          echo "APK metadata OK"
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: muliao-release-apk
+          path: output/*
+          if-no-files-found: error
+          retention-days: 30

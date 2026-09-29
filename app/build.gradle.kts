@@ -30,13 +30,14 @@ extensions.configure<ApplicationExtension> {
     ndkVersion = "30.0.15729638"
 
     defaultConfig {
-        applicationId = if (wanxiangDevBuild) "top.wanxiang.app.dev" else "top.wanxiang.app"
+        // 「幕僚」重品牌：非 DEV 主线包名改为 com.muliao.agent（DEV 预览包保持上游 top.wanxiang.app.dev）
+        applicationId = if (wanxiangDevBuild) "top.wanxiang.app.dev" else "com.muliao.agent"
         minSdk = 29
         targetSdk = 37
         versionCode = appVersionCode
         versionName = appVersionName
-        // 应用名统一走 manifest placeholder：WanXiangDev 构建显示 "WanXiangDev"，其余显示 "万象"。
-        manifestPlaceholders["appLabel"] = if (wanxiangDevBuild) "WanXiangDev" else "万象"
+        // 应用名走 manifest placeholder：「幕僚」重品牌后非 DEV 主线显示 "幕僚"，WanXiangDev 预览仍显示 "WanXiangDev"。
+        manifestPlaceholders["appLabel"] = if (wanxiangDevBuild) "WanXiangDev" else "幕僚"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             abiFilters += "arm64-v8a"
@@ -101,7 +102,7 @@ extensions.configure<ApplicationExtension> {
             versionNameSuffix = if (wanxiangDevBuild) "-dev" else "-debug"
         }
         release {
-            manifestPlaceholders["appLabel"] = if (wanxiangDevBuild) "WanXiangDev" else "万象"
+            manifestPlaceholders["appLabel"] = if (wanxiangDevBuild) "WanXiangDev" else "幕僚"
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(

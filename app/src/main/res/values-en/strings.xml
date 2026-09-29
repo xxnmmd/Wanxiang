@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="wanxiang_app_name">WanXiang</string>
+    <string name="wanxiang_app_name">Muliao</string>
     <string name="wanxiang_update_available">New version available: v%1$s</string>
     <string name="wanxiang_update_versions">Current: v%1$s  ➔  Latest: v%2$s</string>
     <string name="wanxiang_update_downloading_package">Downloading update…</string>
