@@ -40,6 +40,13 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # 必须显式覆盖该 action 的默认 packages（默认值 "tools platform-tools"）：
+          # legacy 'tools' 包已从 Google SDK 仓库下架，sdkmanager 会报
+          # "Failed to find package 'tools'" 并 exit 1 —— 即 run 36559865321 的失败根因。
+          packages: platform-tools
+          accept-android-sdk-licenses: true
+          log-accepted-android-sdk-licenses: false
 
       - name: Install NDK 30.0.15729638 & CMake 3.22.1 & SDK 37
         run: |
